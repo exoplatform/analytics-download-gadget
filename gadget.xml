@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Module>
+  <ModulePrefs title="Analytics: Pageview - Download">
+<OAuth>
+    <Service name="google">
+        <Access url="https://www.google.com/accounts/OAuthGetAccessToken" method="GET" />
+        <Request url="https://www.google.com/accounts/OAuthGetRequestToken?scope=https://www.google.com/analytics/feeds/" method="GET" />
+        <Authorization url="https://www.google.com/accounts/OAuthAuthorizeToken?oauth_callback=http://oauth.gmodules.com/gadgets/oauthcallback" />
+    </Service>
+</OAuth>
+</ModulePrefs>
+
+<Content type="html">
+<![CDATA[ 
+    <script src="http://github.com/DmitryBaranovskiy/raphael/raw/master/raphael.js"></script>
+    <script src="http://github.com/mjjohnson/g.raphael/raw/master/g.raphael.js"></script>
+    <script src="http://github.com/mjjohnson/g.raphael/raw/master/g.line.js"></script>
+    <script src="http://blogger-gadgets.appspot.com/js/popup.js"></script>
+
+    <script type="text/javascript">
+        var analytics_table = "ga:2297028",
+            download_url = "http://stats.ow2.org/downloadStats/exoplatform/2010/03/exoplatform-2010-3.csv";
+        
+        function getDownloadStats() {
+            //We do a get on the CSV file
+            gadgets.io.makeRequest(download_url, function(result) {
+                //We split the lines
+                var data = result.data.split("\n"), res = [];
+                //Take the line before the last one (the last one is empty on our CSV) and split it by comma
+                data = data[data.length - 2].split(",");
+                //We get all the data and convert it to Number
+                for (i = 3; i < data.length - 1; i += 1) {
+                    res.push(parseFloat(data[i]));
+                }
+                finishLoading("gss", res);
+            });
+        }
+        
+        function getAnalyticsData() {
+            /*
+            * Retrieve total pageviews and visits for 30 days.
+            */
+
+            // The feed URI that is used for retrieving the analytics data
+            var feedUri = 'https://www.google.com/analytics/feeds/data' +
+                '?start-date=2010-03-01' +
+                '&end-date=2010-03-30' +
+                '&dimensions=ga:date' +
+                '&metrics=ga:visits,ga:pageviews' +
+                '&sort=ga:date' +
+                '&ids=' + analytics_table + '&alt=json',
+                params = {};
+                
+            // The response will be in JSON
+            params[gadgets.io.RequestParameters.CONTENT_TYPE] = gadgets.io.ContentType.JSON;
+            //The authentication method will be oAuth
+            params[gadgets.io.RequestParameters.AUTHORIZATION] = gadgets.io.AuthorizationType.OAUTH;
+            //The name of the oAuth service to authenticate with
+            params[gadgets.io.RequestParameters.OAUTH_SERVICE_NAME] = "google";
+            //We want to do a get ont he URL
+            params[gadgets.io.RequestParameters.METHOD] = gadgets.io.MethodType.GET;
+
+            //We send the request and define the Callback
+            gadgets.io.makeRequest(feedUri, function (result) {
+                //If we need to authentication
+                if (result.oauthApprovalUrl) {
+                  // Create the popup handler. The onOpen function is called when the user
+                  // opens the popup window. The onClose function is called when the popup
+                  // window is closed.
+                  var popup = shindig.oauth.popup({
+                    destination: result.oauthApprovalUrl,
+                    windowOptions: null,
+                    onOpen: function() {},
+                    onClose: function() {personalize.style.display= "none"; getAnalyticsData(); }
+                  });
+                  var personalize = document.getElementById('personalize');
+                  personalize.onclick = popup.createOpenerOnClick();
+                  document.getElementById('approval').style.display= "block";
+                } else {
+                    //If the request worked, we parse the response and get the data interesting for us.
+                    var entries = result.data.feed.entry,
+                         data = [],
+                         entry;
+                     for (var i = 0; i < entries.length; i++) {
+                         entry = entries[i];
+                         data.push(parseFloat(entry["dxp$metric"][0].value));
+                     }
+                     finishLoading("analytics", data);
+                }
+            }, params);
+        }
+        
+        
+        function drawChart(datas) {
+            // we Create The raphael holder
+            var r = Raphael("holder", 300, 170),
+                keys = [[], []], values = [[], []],
+                stars = r.set(),
+                col = 1,
+                stars = {};
+            
+            //g.Raphael want the data in 2 array one for the key, the other for the values, so we convert our data to match this format
+            for (var i = 1; i <=30;i++) {
+                keys[0].push(i);
+                keys[1].push(i);
+                values[0].push(datas["gss"][i - 1]);
+                values[1].push(datas["analytics"][i - 1]);
+            }
+            
+            //We create our chart   
+            var lines = r.g.linechart(0, 0, 300, 150, keys, values, {nostroke: false}).hoverColumn(function () {
+                this.tags = r.set();
+                var labels = ["downloads", "visitors"];
+                //When the mouse is over, we display the values
+                for (var i = 0, ii = this.y.length; i < ii; i++) {
+                    this.tags.push(r.g.blob(this.x, this.y[i], this.values[i] + " " + labels[i]).insertBefore(this));
+                }
+                //if there is a star, we show its label
+                if (stars[this.x]) {
+                    this.tags.push(r.g.label(this.x, 20, stars[this.x].txt).insertAfter(stars[this.x].node));
+                }
+            }, function () {
+                //We cleanup everything when the mouse out
+                this.tags && this.tags.remove();
+            });
+          
+            lines.eachColumn(function(){
+                if (col === 8 || col === 23) {
+                    stars[this.x] = {
+                                  node: r.g.star(this.x, 140, 5).attr({fill: "#000", stroke: "none"}),
+                                  col: col,
+                                  txt: "release GateIn 3.0 "
+                    };
+                }
+                col++;
+            });
+        }
+        
+        function finishLoading(type, data) {
+            if (finishLoading.data) {
+                finishLoading.data[type] = data;
+                drawChart(finishLoading.data);
+            } else {
+                finishLoading.data = [];
+                finishLoading.data[type] = data;
+            }
+
+        }
+        getDownloadStats();
+        getAnalyticsData();
+    </script>
+    <div id="approval" style="display:none">
+        <img src="http://gadget-doc-examples.googlecode.com/svn/trunk/images/new.gif">
+        <a href="#" id="personalize">Allow this gadget</a>
+    </div>
+    <div id="holder"></div>
+]]></Content></Module>
