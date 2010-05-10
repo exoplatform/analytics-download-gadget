@@ -19,7 +19,7 @@
 
     <script type="text/javascript">
         var analytics_table = "ga:2297028",
-            download_url = "http://stats.ow2.org/downloadStats/exoplatform/2010/03/exoplatform-2010-3.csv";
+            download_url = "http://stats.mydomain.org/download-2010-3.csv";
         
         function getDownloadStats() {
             //We do a get on the CSV file
